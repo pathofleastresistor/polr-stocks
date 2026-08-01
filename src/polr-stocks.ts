@@ -11,8 +11,7 @@ import {
   formatChange,
   formatPercent,
   formatPrice,
-  formatVolume,
-  isDerivedPrice,
+  formatRange,
   readTicker,
   type Direction,
   type Ticker,
@@ -221,20 +220,11 @@ export class PolrStocks extends LitElement {
       ? html`<span class="change ${colour}">${change}</span>`
       : "";
 
-    // A price carried over from a stale bar is worth flagging — on the free IEX
-    // feed a quiet ticker can sit on yesterday's close looking perfectly live.
-    const derived = isDerivedPrice(ticker)
-      ? html`<span class="derived"
-          ><ha-icon icon="mdi:clock-alert-outline"></ha-icon>delayed</span
-        >`
-      : "";
+    const range = formatRange(ticker, this._language);
 
-    const session =
-      ticker.volume !== null ? `Vol ${formatVolume(ticker.volume, this._language)}` : "";
-
-    if (mode === "change") return [changeFragment, derived].filter((p) => p !== "");
-    if (mode === "session") return [session, derived].filter((p) => p !== "");
-    return [changeFragment, session, derived].filter((p) => p !== "");
+    if (mode === "change") return [changeFragment].filter((p) => p !== "");
+    if (mode === "range") return [range].filter((p) => p !== "");
+    return [changeFragment, range].filter((p) => p !== "");
   }
 
   static override styles = [
@@ -285,14 +275,6 @@ export class PolrStocks extends LitElement {
       }
       li.row.dir-down .tile-icon::before {
         background-color: var(--error-color, #db4437);
-      }
-      .derived {
-        color: var(--warning-color, #ffa600);
-        --mdc-icon-size: 12px;
-      }
-      .derived ha-icon {
-        vertical-align: -2px;
-        margin-inline-end: 2px;
       }
       li.row {
         cursor: pointer;

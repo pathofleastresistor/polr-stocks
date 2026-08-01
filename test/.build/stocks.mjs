@@ -35,9 +35,7 @@ var readTicker = (hass, entity) => {
     open: num(attrs.open),
     high: num(attrs.high),
     low: num(attrs.low),
-    volume: num(attrs.volume),
-    priceSource: attrs.price_source ?? "",
-    lastTradeAt: attrs.last_trade_at,
+    quotedAt: attrs.quoted_at,
     available: available && price !== null
   };
 };
@@ -82,14 +80,15 @@ var formatPercent = (value, language = "en") => {
   }).format(Math.abs(value));
   return `${sign}${body}%`;
 };
-var formatVolume = (value, language = "en") => {
-  if (value === null) return "\u2014";
-  return new Intl.NumberFormat(language, {
-    notation: "compact",
-    maximumFractionDigits: 1
-  }).format(value);
+var formatRange = (ticker, language = "en") => {
+  if (!ticker || ticker.low === null || ticker.high === null) return "";
+  const currency = ticker.currency;
+  return `${formatPrice(ticker.low, currency, language)} \u2013 ${formatPrice(
+    ticker.high,
+    currency,
+    language
+  )}`;
 };
-var isDerivedPrice = (ticker) => Boolean(ticker?.available && ticker.priceSource && ticker.priceSource !== "latest_trade");
 export {
   DIRECTION_ICONS,
   changeDirection,
@@ -97,8 +96,7 @@ export {
   formatChange,
   formatPercent,
   formatPrice,
-  formatVolume,
-  isDerivedPrice,
+  formatRange,
   isPriceSensor,
   num,
   readTicker

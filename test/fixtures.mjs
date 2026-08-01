@@ -27,9 +27,7 @@ export const makeHass = () => ({
       open: 170.0,
       high: 173.71,
       low: 169.5,
-      volume: 56457696,
-      price_source: "latest_trade",
-      last_trade_at: "2024-03-14T15:18:24.114Z",
+      quoted_at: "2024-03-14T15:18:24.114Z",
     }),
 
     // Down on the day.
@@ -39,19 +37,19 @@ export const makeHass = () => ({
       change: -7.77,
       change_percent: -1.8495,
       previous_close: 420.11,
-      volume: 21044310,
-      price_source: "latest_trade",
+      high: 421.0,
+      low: 411.2,
     }),
 
-    // Flat, and carried over from a stale daily bar — the IEX-sparse case.
+    // Flat on the day.
     "sensor.polr_stocks_nvda": quote("sensor.polr_stocks_nvda", "875.28", {
       friendly_name: "POLR Stocks NVDA",
       symbol: "NVDA",
       change: 0,
       change_percent: 0,
       previous_close: 875.28,
-      volume: 41233900,
-      price_source: "daily_bar",
+      high: 880.0,
+      low: 868.5,
     }),
 
     // Offline.

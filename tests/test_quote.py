@@ -1,154 +1,106 @@
-"""Tests for snapshot normalisation.
+"""Tests for Finnhub quote normalisation and market hours.
 
 quote.py deliberately has no Home Assistant imports, so it is importable and
 testable on its own.
 """
-from datetime import date
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 import pytest
 
 from polr_stocks_quote import (  # loaded by conftest.py, see the note there
-    SOURCE_DAILY,
-    SOURCE_MINUTE,
-    SOURCE_TRADE,
-    parse_snapshot,
-    parse_snapshots,
-    resolve_previous_close,
-    resolve_price,
+    MARKET_TZ,
+    is_market_open,
+    parse_quote,
 )
 
-# A mid-session snapshot: dailyBar is today (2024-03-14 ET), prevDailyBar is
-# the 13th. Bars start at 04:00Z == 00:00 EDT, so the UTC date matches the ET
-# date here; the pre-open case below is where they diverge.
-OPEN_SESSION = {
-    "latestTrade": {"p": 172.61, "t": "2024-03-14T15:18:24.114Z"},
-    "latestQuote": {"bp": 172.60, "ap": 172.70},
-    "minuteBar": {"o": 172.5, "h": 172.7, "l": 172.4, "c": 172.69, "v": 106},
-    "dailyBar": {
-        "t": "2024-03-14T04:00:00Z",
-        "o": 170.0,
-        "h": 173.71,
-        "l": 169.5,
-        "c": 172.61,
-        "v": 56457696,
-    },
-    "prevDailyBar": {"t": "2024-03-13T04:00:00Z", "c": 170.0, "v": 54091719},
+# A live mid-session quote.
+QUOTE = {
+    "c": 172.61,
+    "d": 2.61,
+    "dp": 1.5353,
+    "h": 173.71,
+    "l": 169.5,
+    "o": 170.0,
+    "pc": 170.0,
+    "t": 1710428304,
 }
 
+# What Finnhub returns for a ticker it does not know: zeros, not an error.
+UNKNOWN = {"c": 0, "d": None, "dp": None, "h": 0, "l": 0, "o": 0, "pc": 0, "t": 0}
 
-class TestResolvePrice:
-    def test_prefers_the_latest_trade(self):
-        assert resolve_price(OPEN_SESSION) == (172.61, SOURCE_TRADE)
-
-    def test_falls_back_to_minute_bar_when_no_trade(self):
-        snap = {**OPEN_SESSION, "latestTrade": {}}
-        assert resolve_price(snap) == (172.69, SOURCE_MINUTE)
-
-    def test_falls_back_to_daily_bar_when_iex_is_silent(self):
-        # A quiet name can have no IEX prints at all for long stretches.
-        snap = {**OPEN_SESSION, "latestTrade": {}, "minuteBar": {}}
-        assert resolve_price(snap) == (172.61, SOURCE_DAILY)
-
-    def test_zero_is_treated_as_absent(self):
-        # Alpaca pads empty bar fields with 0; a real equity never trades at 0.
-        snap = {**OPEN_SESSION, "latestTrade": {"p": 0}, "minuteBar": {"c": 0}}
-        assert resolve_price(snap) == (172.61, SOURCE_DAILY)
-
-    def test_no_data_at_all(self):
-        assert resolve_price({}) == (None, None)
+ET = MARKET_TZ
 
 
-class TestResolvePreviousClose:
-    def test_mid_session_uses_prev_daily_bar(self):
-        assert resolve_previous_close(OPEN_SESSION, date(2024, 3, 14)) == 170.0
-
-    def test_before_the_open_uses_the_daily_bar(self):
-        """The regression that shows a day-old change every morning.
-
-        Overnight, dailyBar is still yesterday's completed session. Reaching
-        for prevDailyBar then measures against the session before that.
-        """
-        assert resolve_previous_close(OPEN_SESSION, date(2024, 3, 15)) == 172.61
-
-    def test_weekend_uses_the_last_completed_session(self):
-        assert resolve_previous_close(OPEN_SESSION, date(2024, 3, 17)) == 172.61
-
-    def test_bar_timestamp_is_read_in_market_time(self):
-        """A bar stamped 04:00Z is midnight ET the same day, not the day before."""
-        snap = {
-            "dailyBar": {"t": "2024-03-14T04:00:00Z", "c": 100.0},
-            "prevDailyBar": {"t": "2024-03-13T04:00:00Z", "c": 90.0},
-        }
-        assert resolve_previous_close(snap, date(2024, 3, 14)) == 90.0
-
-    def test_mid_session_without_a_prev_bar_is_unknown(self):
-        # dailyBar is the session in progress, so it is not itself a close.
-        snap = {"dailyBar": {"t": "2024-03-14T04:00:00Z", "c": 100.0}}
-        assert resolve_previous_close(snap, date(2024, 3, 14)) is None
-
-    def test_unparseable_timestamp_falls_back_to_daily_close(self):
-        snap = {
-            "dailyBar": {"t": "not-a-date", "c": 100.0},
-            "prevDailyBar": {"c": 90.0},
-        }
-        assert resolve_previous_close(snap, date(2024, 3, 14)) == 100.0
-
-
-class TestParseSnapshot:
-    def test_computes_change_and_percent(self):
-        quote = parse_snapshot("GOOGL", OPEN_SESSION, date(2024, 3, 14))
+class TestParseQuote:
+    def test_reads_price_and_change(self):
+        quote = parse_quote("GOOGL", QUOTE)
         assert quote is not None
         assert quote.symbol == "GOOGL"
         assert quote.price == 172.61
+        assert quote.change == pytest.approx(2.61)
+        assert quote.change_percent == pytest.approx(1.5353)
         assert quote.previous_close == 170.0
+
+    def test_carries_session_stats(self):
+        quote = parse_quote("GOOGL", QUOTE)
+        assert (quote.open, quote.high, quote.low) == (170.0, 173.71, 169.5)
+
+    def test_converts_epoch_timestamp_to_iso(self):
+        quote = parse_quote("GOOGL", QUOTE)
+        assert quote.quoted_at is not None
+        assert quote.quoted_at.startswith("2024-03-14T")
+
+    def test_unknown_ticker_yields_no_quote(self):
+        # The zeros are why a 0 price is treated as absent everywhere.
+        assert parse_quote("NOPE", UNKNOWN) is None
+
+    def test_empty_payload_yields_no_quote(self):
+        assert parse_quote("GOOGL", {}) is None
+
+    def test_a_flat_day_is_not_a_missing_change(self):
+        quote = parse_quote("NVDA", {**QUOTE, "d": 0, "dp": 0})
+        assert quote.change == 0
+        assert quote.change_percent == 0
+
+    def test_derives_change_when_finnhub_omits_it(self):
+        quote = parse_quote("GOOGL", {"c": 172.61, "pc": 170.0})
         assert quote.change == pytest.approx(2.61)
         assert quote.change_percent == pytest.approx(1.5353, abs=1e-4)
 
-    def test_carries_session_stats(self):
-        quote = parse_snapshot("GOOGL", OPEN_SESSION, date(2024, 3, 14))
-        assert (quote.open, quote.high, quote.low) == (170.0, 173.71, 169.5)
-        assert quote.volume == 56457696
-        assert quote.last_trade_at == "2024-03-14T15:18:24.114Z"
-        assert quote.price_source == SOURCE_TRADE
-
-    def test_pre_open_change_is_flat_not_yesterdays(self):
-        quote = parse_snapshot("GOOGL", OPEN_SESSION, date(2024, 3, 15))
-        # Price equals the last close, so the change is flat — not the +2.61
-        # that a naive prevDailyBar comparison would report every morning.
-        assert quote.change == pytest.approx(0.0)
-
-    def test_no_price_yields_no_quote(self):
-        assert parse_snapshot("GOOGL", {"latestQuote": {"bp": 1.0}}) is None
-
-    def test_empty_snapshot_yields_no_quote(self):
-        assert parse_snapshot("GOOGL", {}) is None
-
-    def test_missing_previous_close_leaves_change_none(self):
-        snap = {"latestTrade": {"p": 10.0}}
-        quote = parse_snapshot("X", snap, date(2024, 3, 14))
+    def test_no_previous_close_leaves_change_unknown(self):
+        quote = parse_quote("GOOGL", {"c": 172.61})
         assert quote.change is None and quote.change_percent is None
 
-    def test_zero_previous_close_does_not_divide_by_zero(self):
-        snap = {
-            "latestTrade": {"p": 10.0},
-            "dailyBar": {"t": "2024-03-14T04:00:00Z", "c": 0},
-            "prevDailyBar": {"c": 0},
-        }
-        quote = parse_snapshot("X", snap, date(2024, 3, 14))
-        assert quote.change_percent is None
+    def test_bad_timestamp_is_dropped_not_fatal(self):
+        quote = parse_quote("GOOGL", {**QUOTE, "t": "nonsense"})
+        assert quote is not None and quote.quoted_at is None
 
 
-class TestParseSnapshots:
-    def test_skips_symbols_without_a_price(self):
-        payload = {
-            "GOOGL": OPEN_SESSION,
-            "BADTICKER": {},
-            "ALSOBAD": None,
-            "NOTADICT": "nope",
-        }
-        quotes = parse_snapshots(payload, date(2024, 3, 14))
-        assert list(quotes) == ["GOOGL"]
+class TestIsMarketOpen:
+    def test_open_mid_session(self):
+        assert is_market_open(datetime(2024, 3, 14, 12, 0, tzinfo=ET)) is True
 
-    def test_empty_payload(self):
-        assert parse_snapshots({}) == {}
-        assert parse_snapshots(None) == {}
+    def test_closed_before_the_bell(self):
+        assert is_market_open(datetime(2024, 3, 14, 9, 29, tzinfo=ET)) is False
+
+    def test_open_exactly_at_the_bell(self):
+        assert is_market_open(datetime(2024, 3, 14, 9, 30, tzinfo=ET)) is True
+
+    def test_closed_exactly_at_the_close(self):
+        # 16:00 is the close, not still trading.
+        assert is_market_open(datetime(2024, 3, 14, 16, 0, tzinfo=ET)) is False
+
+    def test_closed_at_the_weekend(self):
+        assert is_market_open(datetime(2024, 3, 16, 12, 0, tzinfo=ET)) is False
+        assert is_market_open(datetime(2024, 3, 17, 12, 0, tzinfo=ET)) is False
+
+    def test_converts_from_other_timezones(self):
+        """17:00 UTC is 13:00 ET — open, despite being outside 9:30-16:00 UTC."""
+        utc_noon_et = datetime(2024, 3, 14, 17, 0, tzinfo=ZoneInfo("UTC"))
+        assert is_market_open(utc_noon_et) is True
+
+    def test_uses_market_time_not_local_time(self):
+        """A Seattle evening is still a closed market, not an open one."""
+        pacific = datetime(2024, 3, 14, 18, 0, tzinfo=ZoneInfo("America/Los_Angeles"))
+        assert is_market_open(pacific) is False

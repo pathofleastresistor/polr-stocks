@@ -1,7 +1,7 @@
 /** Config types for polr-stocks. */
 
-/** What the row's secondary line shows. */
-export type SecondaryMode = "change" | "session" | "both" | "none";
+/** What the row's secondary line shows. `range` is the session low-to-high. */
+export type SecondaryMode = "change" | "range" | "both" | "none";
 
 export interface TickerConfig {
   /** Price sensor, e.g. sensor.polr_stocks_googl. */

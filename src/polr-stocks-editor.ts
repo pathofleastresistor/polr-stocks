@@ -17,9 +17,9 @@ const SCHEMA = [
       select: {
         mode: "dropdown",
         options: [
-          { value: "both", label: "Day change + volume" },
+          { value: "both", label: "Day change + range" },
           { value: "change", label: "Day change" },
-          { value: "session", label: "Volume" },
+          { value: "range", label: "Session range" },
           { value: "none", label: "Nothing" },
         ],
       },

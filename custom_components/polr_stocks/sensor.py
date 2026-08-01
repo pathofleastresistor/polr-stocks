@@ -71,7 +71,5 @@ class StockPriceSensor(CoordinatorEntity[StocksCoordinator], SensorEntity):
             "open": quote.open,
             "high": quote.high,
             "low": quote.low,
-            "volume": quote.volume,
-            "price_source": quote.price_source,
-            "last_trade_at": quote.last_trade_at,
+            "quoted_at": quote.quoted_at,
         }

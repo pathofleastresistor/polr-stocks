@@ -2,26 +2,28 @@
 
 DOMAIN = "polr_stocks"
 
-# Market data lives on a different host than the trading/clock API.
-ALPACA_DATA_BASE = "https://data.alpaca.markets"
-ALPACA_TRADING_BASE = "https://api.alpaca.markets"
+FINNHUB_API_BASE = "https://finnhub.io/api/v1"
 
 CONF_API_KEY = "api_key"
-CONF_API_SECRET = "api_secret"
 CONF_SYMBOLS = "symbols"
+CONF_SCAN_INTERVAL = "scan_interval"
 
-# Free "Basic" plan: real-time is IEX-only. sip/delayed_sip need a subscription.
-FEED = "iex"
+# Finnhub's free tier documents 60 calls/minute. Reports of an additional daily
+# cap exist but are unconfirmed, and the docs are JS-rendered so the real number
+# can't be read programmatically. Rather than guess, the client reads Finnhub's
+# X-Ratelimit-* headers and adapts — see api.py. This default is deliberately
+# unhurried: one call per symbol per poll, so 5 symbols at 60s is 5 calls/min.
+DEFAULT_SCAN_INTERVAL_SECONDS = 60
+MIN_SCAN_INTERVAL_SECONDS = 15
+MAX_SCAN_INTERVAL_SECONDS = 3600
 
-# One snapshots request per refresh, so 60s sits far under the 200 req/min cap.
-UPDATE_INTERVAL_OPEN_SECONDS = 60
-UPDATE_INTERVAL_CLOSED_SECONDS = 1800
+# Outside market hours prices don't move; poll rarely so the daily budget (if
+# there is one) is spent on the session rather than overnight.
+CLOSED_INTERVAL_SECONDS = 1800
 
-# The clock rarely matters to the second; don't spend a request on it every poll.
-CLOCK_CACHE_SECONDS = 300
-
-# Symbol used to prove the credentials work during the config flow.
-VALIDATION_SYMBOL = "AAPL"
+# Stop making calls when the window has this little headroom left, so a burst
+# never trips a 429.
+RATE_LIMIT_RESERVE = 2
 
 REQUEST_TIMEOUT_SECONDS = 15
 

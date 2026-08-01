@@ -1,4 +1,4 @@
-"""Poll Alpaca for the whole watchlist in one request."""
+"""Poll Finnhub for each configured symbol."""
 from __future__ import annotations
 
 import logging
@@ -8,77 +8,94 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .api import AlpacaApi, AlpacaApiError, AlpacaAuthError
-from .const import (
-    DOMAIN,
-    UPDATE_INTERVAL_CLOSED_SECONDS,
-    UPDATE_INTERVAL_OPEN_SECONDS,
-)
-from .quote import Quote, parse_snapshots
+from .api import FinnhubApi, FinnhubApiError, FinnhubAuthError, FinnhubRateLimitError
+from .const import CLOSED_INTERVAL_SECONDS, DOMAIN
+from .quote import Quote, is_market_open, parse_quote
 
 _LOGGER = logging.getLogger(__name__)
 
 
 class StocksCoordinator(DataUpdateCoordinator[dict[str, Quote]]):
-    """Fetch snapshots for every configured symbol on one schedule."""
+    """Fetch a quote per symbol, one request each."""
 
     def __init__(
         self,
         hass: HomeAssistant,
         entry: ConfigEntry,
-        api: AlpacaApi,
+        api: FinnhubApi,
         symbols: list[str],
+        scan_interval: int,
     ) -> None:
         super().__init__(
             hass,
             _LOGGER,
             name=DOMAIN,
             config_entry=entry,
-            update_interval=timedelta(seconds=UPDATE_INTERVAL_OPEN_SECONDS),
+            update_interval=timedelta(seconds=scan_interval),
             # Quotes repeat constantly outside market hours; skipping identical
             # payloads keeps the state machine and recorder quiet.
             always_update=False,
         )
         self.api = api
         self.symbols = symbols
+        self._open_interval = timedelta(seconds=scan_interval)
 
     async def _async_update_data(self) -> dict[str, Quote]:
-        await self._async_apply_market_interval()
+        self._apply_market_interval()
 
-        try:
-            payload = await self.api.async_get_snapshots(self.symbols)
-        except AlpacaAuthError as err:
-            # Credentials went bad — prompt reauth rather than retry forever.
-            raise UpdateFailed(f"Alpaca authentication failed: {err}") from err
-        except AlpacaApiError as err:
-            raise UpdateFailed(str(err)) from err
+        quotes: dict[str, Quote] = dict(self.data or {})
+        fetched = 0
+        errors: list[str] = []
 
-        quotes = parse_snapshots(payload)
+        for symbol in self.symbols:
+            try:
+                payload = await self.api.async_get_quote(symbol)
+            except FinnhubAuthError as err:
+                # Credentials went bad — no amount of retrying fixes it.
+                raise UpdateFailed(f"Finnhub authentication failed: {err}") from err
+            except FinnhubRateLimitError as err:
+                # Deliberately not fatal: keep the prices already on screen
+                # rather than blanking the card over a rate limit.
+                _LOGGER.warning(
+                    "Finnhub rate limit reached after %d/%d symbols; keeping last "
+                    "known prices and retrying in %.0fs. Observed limits: %s",
+                    fetched,
+                    len(self.symbols),
+                    err.retry_after,
+                    self.api.limit_state(),
+                )
+                break
+            except FinnhubApiError as err:
+                errors.append(f"{symbol}: {err}")
+                continue
 
-        missing = [s for s in self.symbols if s not in quotes]
-        if missing:
-            _LOGGER.debug("No usable quote for %s", ", ".join(missing))
+            quote = parse_quote(symbol, payload)
+            if quote is None:
+                _LOGGER.debug("No usable quote for %s", symbol)
+                continue
+            quotes[symbol] = quote
+            fetched += 1
+
         if not quotes:
-            raise UpdateFailed("Alpaca returned no usable quotes")
+            raise UpdateFailed(
+                "; ".join(errors) if errors else "Finnhub returned no usable quotes"
+            )
+        if errors:
+            _LOGGER.debug("Some symbols failed: %s", "; ".join(errors))
 
         return quotes
 
-    async def _async_apply_market_interval(self) -> None:
-        """Poll every minute while open, and rarely while closed."""
-        clock = await self.api.async_get_clock()
-        # No clock reading means assume open — better to over-poll (still far
-        # under the rate limit) than to freeze prices during the session.
-        is_open = True if clock is None else bool(clock.get("is_open", True))
+    def _apply_market_interval(self) -> None:
+        """Poll at the configured rate while open, rarely while closed.
 
-        wanted = timedelta(
-            seconds=UPDATE_INTERVAL_OPEN_SECONDS
-            if is_open
-            else UPDATE_INTERVAL_CLOSED_SECONDS
+        Market hours are computed locally, so this costs no API calls — which
+        matters when the free tier's true daily budget is unknown.
+        """
+        wanted = (
+            self._open_interval
+            if is_market_open()
+            else timedelta(seconds=CLOSED_INTERVAL_SECONDS)
         )
         if self.update_interval != wanted:
-            _LOGGER.debug(
-                "Market %s — polling every %ss",
-                "open" if is_open else "closed",
-                int(wanted.total_seconds()),
-            )
+            _LOGGER.debug("Polling every %ss", int(wanted.total_seconds()))
             self.update_interval = wanted

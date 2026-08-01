@@ -1,34 +1,38 @@
-"""Turning an Alpaca snapshot into a quote.
+"""Turning a Finnhub quote into a Quote, plus market-hours arithmetic.
 
-Pure functions, no Home Assistant imports — this is the part worth unit testing,
-because both of its edge cases produce *plausible but wrong* numbers rather than
-errors.
+Pure functions, no Home Assistant imports, so this is testable on its own.
 
-An Alpaca snapshot (GET /v2/stocks/snapshots) looks like:
+Finnhub's GET /quote returns one symbol per call:
 
-    {"GOOGL": {"latestTrade":  {"p": 172.61, "t": "..."},
-               "latestQuote":  {"bp": 172.60, "ap": 172.70},
-               "minuteBar":    {"o":.., "h":.., "l":.., "c":.., "v":..},
-               "dailyBar":     {"o":.., "h":.., "l":.., "c":.., "v":..},
-               "prevDailyBar": {"c": 173.19, ...}}}
+    {"c": 261.74,   # current price
+     "d": -0.10,    # change from the previous close
+     "dp": -0.0382, # change percent
+     "h": 263.31,   # session high
+     "l": 260.68,   # session low
+     "o": 261.07,   # session open
+     "pc": 261.84,  # previous close
+     "t": 1582641000}
 
-Bar timestamps are the bar's *start*, in UTC. A US daily bar starts at 00:00
-Eastern, so a bar belongs to the Eastern date of its timestamp.
+`pc` is authoritative, which is why there is no previous-close guesswork here:
+with snapshot-style APIs the previous close has to be inferred from which
+session the daily bar belongs to, and getting that wrong shows a day-old change
+every morning. Finnhub just states it.
+
+An unknown ticker is not an error — it comes back with every field 0 or null,
+which is why a price of 0 is treated as "no data" throughout.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from datetime import date, datetime, timezone
+from dataclasses import dataclass
+from datetime import datetime, time, timezone
 from typing import Any
 from zoneinfo import ZoneInfo
 
 MARKET_TZ = ZoneInfo("America/New_York")
 
-# Where the last price came from, best first. Exposed as the `price_source`
-# attribute so a stale-looking price can be explained rather than guessed at.
-SOURCE_TRADE = "latest_trade"
-SOURCE_MINUTE = "minute_bar"
-SOURCE_DAILY = "daily_bar"
+# Regular US equity session.
+MARKET_OPEN = time(9, 30)
+MARKET_CLOSE = time(16, 0)
 
 
 @dataclass
@@ -37,149 +41,97 @@ class Quote:
 
     symbol: str
     price: float
-    price_source: str
+    change: float | None = None
+    change_percent: float | None = None
     previous_close: float | None = None
     open: float | None = None
     high: float | None = None
     low: float | None = None
-    volume: int | None = None
-    last_trade_at: str | None = None
-    extra: dict[str, Any] = field(default_factory=dict)
-
-    @property
-    def change(self) -> float | None:
-        """Absolute move from the previous session's close."""
-        if self.previous_close is None:
-            return None
-        return round(self.price - self.previous_close, 4)
-
-    @property
-    def change_percent(self) -> float | None:
-        """Percentage move from the previous session's close."""
-        if not self.previous_close:  # None or 0 — 0 would divide by zero
-            return None
-        return round((self.price - self.previous_close) / self.previous_close * 100, 4)
+    quoted_at: str | None = None
 
 
 def _num(value: Any) -> float | None:
-    """Coerce an API field to a float, treating junk as absent."""
+    """Coerce an API field to a float, treating junk and 0 as absent.
+
+    Finnhub pads an unknown symbol's response with zeros, and a real equity
+    never trades at 0, so the two are safely conflated.
+    """
     if isinstance(value, bool) or value is None:
         return None
     try:
         out = float(value)
     except (TypeError, ValueError):
         return None
-    # Alpaca uses 0 for "no data" in bar fields; a real equity never trades at 0.
     return out if out != 0 else None
 
 
-def _bar_date(bar: dict[str, Any] | None) -> date | None:
-    """The Eastern-market date a bar belongs to."""
-    if not bar:
-        return None
-    stamp = bar.get("t")
-    if not isinstance(stamp, str):
+def _signed(value: Any) -> float | None:
+    """Like _num, but 0 is a real value — a flat day is not a missing one."""
+    if isinstance(value, bool) or value is None:
         return None
     try:
-        parsed = datetime.fromisoformat(stamp.replace("Z", "+00:00"))
-    except ValueError:
-        return None
-    if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=timezone.utc)
-    return parsed.astimezone(MARKET_TZ).date()
-
-
-def resolve_price(snapshot: dict[str, Any]) -> tuple[float | None, str | None]:
-    """Last price, falling back through progressively staler sources.
-
-    The free feed is IEX only (~2.5% of US volume), so `latestTrade` can be
-    missing or hours old on quiet names. Falling back keeps the card populated
-    instead of showing "unavailable" for a stock that is trading fine elsewhere.
-    """
-    price = _num((snapshot.get("latestTrade") or {}).get("p"))
-    if price is not None:
-        return price, SOURCE_TRADE
-
-    price = _num((snapshot.get("minuteBar") or {}).get("c"))
-    if price is not None:
-        return price, SOURCE_MINUTE
-
-    price = _num((snapshot.get("dailyBar") or {}).get("c"))
-    if price is not None:
-        return price, SOURCE_DAILY
-
-    return None, None
-
-
-def resolve_previous_close(
-    snapshot: dict[str, Any], today: date | None = None
-) -> float | None:
-    """The close to measure today's change against.
-
-    `prevDailyBar` is only the right comparison once `dailyBar` is *today's*
-    session. Outside market hours — including every morning before the open —
-    `dailyBar` is still the last completed session, and using `prevDailyBar`
-    then would measure against the session before that, showing a day-old
-    change as if it were live.
-    """
-    daily = snapshot.get("dailyBar") or {}
-    prev = snapshot.get("prevDailyBar") or {}
-
-    if today is None:
-        today = datetime.now(MARKET_TZ).date()
-
-    daily_date = _bar_date(daily)
-    if daily_date is not None and daily_date >= today:
-        # dailyBar is the session in progress; prevDailyBar is the last close.
-        return _num(prev.get("c"))
-
-    # dailyBar is itself the last completed session.
-    return _num(daily.get("c")) or _num(prev.get("c"))
-
-
-def parse_snapshot(
-    symbol: str, snapshot: dict[str, Any], today: date | None = None
-) -> Quote | None:
-    """Normalise one symbol's snapshot. None when there is no usable price."""
-    if not snapshot:
+        return float(value)
+    except (TypeError, ValueError):
         return None
 
-    price, source = resolve_price(snapshot)
-    if price is None or source is None:
+
+def _timestamp(value: Any) -> str | None:
+    """Finnhub's `t` is epoch seconds; expose it as ISO 8601."""
+    seconds = _num(value)
+    if seconds is None:
+        return None
+    try:
+        return datetime.fromtimestamp(seconds, tz=timezone.utc).isoformat()
+    except (OverflowError, OSError, ValueError):
         return None
 
-    previous_close = resolve_previous_close(snapshot, today)
 
-    # Session stats come from whichever daily bar the price belongs to, so an
-    # after-hours quote reports that session's range rather than an empty one.
-    daily = snapshot.get("dailyBar") or {}
-    if source == SOURCE_DAILY and not daily:
-        daily = snapshot.get("prevDailyBar") or {}
+def parse_quote(symbol: str, payload: dict[str, Any]) -> Quote | None:
+    """Normalise one /quote response. None when there is no usable price."""
+    if not payload:
+        return None
 
-    volume = _num(daily.get("v"))
+    price = _num(payload.get("c"))
+    if price is None:
+        return None
+
+    previous_close = _num(payload.get("pc"))
+    change = _signed(payload.get("d"))
+    change_percent = _signed(payload.get("dp"))
+
+    # Finnhub occasionally omits d/dp while still returning c and pc; deriving
+    # them is exact here, since pc is stated rather than inferred.
+    if change is None and previous_close is not None:
+        change = round(price - previous_close, 4)
+    if change_percent is None and previous_close:
+        change_percent = round((price - previous_close) / previous_close * 100, 4)
 
     return Quote(
         symbol=symbol,
         price=price,
-        price_source=source,
+        change=change,
+        change_percent=change_percent,
         previous_close=previous_close,
-        open=_num(daily.get("o")),
-        high=_num(daily.get("h")),
-        low=_num(daily.get("l")),
-        volume=int(volume) if volume is not None else None,
-        last_trade_at=(snapshot.get("latestTrade") or {}).get("t"),
+        open=_num(payload.get("o")),
+        high=_num(payload.get("h")),
+        low=_num(payload.get("l")),
+        quoted_at=_timestamp(payload.get("t")),
     )
 
 
-def parse_snapshots(
-    payload: dict[str, Any], today: date | None = None
-) -> dict[str, Quote]:
-    """Normalise a whole multi-symbol snapshots response."""
-    out: dict[str, Quote] = {}
-    for symbol, snapshot in (payload or {}).items():
-        if not isinstance(snapshot, dict):
-            continue
-        quote = parse_snapshot(symbol, snapshot, today)
-        if quote is not None:
-            out[symbol] = quote
-    return out
+def is_market_open(now: datetime | None = None) -> bool:
+    """Whether the US equity market is in its regular session.
+
+    Computed locally rather than fetched, so it costs no API calls. Holidays
+    are not modelled: on a holiday this reports open and the integration polls
+    a flat price a few extra times, which is harmless. Treating a holiday as
+    closed would be worse, since a wrong "closed" would freeze real prices.
+    """
+    if now is None:
+        now = datetime.now(MARKET_TZ)
+    else:
+        now = now.astimezone(MARKET_TZ)
+
+    if now.weekday() >= 5:  # Saturday, Sunday
+        return False
+    return MARKET_OPEN <= now.time() < MARKET_CLOSE

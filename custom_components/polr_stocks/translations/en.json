@@ -3,22 +3,24 @@
     "step": {
       "user": {
         "title": "PoLR Stocks",
-        "description": "Create free API keys at alpaca.markets — a paper account works and no funding is required.",
+        "description": "Create a free API key at finnhub.io \u2014 email signup only, no personal or financial details.",
         "data": {
-          "api_key": "API key ID",
-          "api_secret": "API secret key",
-          "symbols": "Tickers"
+          "api_key": "API key",
+          "symbols": "Tickers",
+          "scan_interval": "Update interval (seconds)"
         },
         "data_description": {
-          "symbols": "Comma-separated, e.g. GOOGL, MSFT, NVDA"
+          "symbols": "Comma-separated, e.g. GOOGL, MSFT, NVDA",
+          "scan_interval": "One API call per ticker per update. Finnhub's free tier allows 60 calls/minute."
         }
       }
     },
     "error": {
-      "invalid_auth": "Alpaca rejected these credentials. Check the key ID and secret.",
-      "cannot_connect": "Could not reach Alpaca. Check your network and try again.",
+      "invalid_auth": "Finnhub rejected this API key.",
+      "cannot_connect": "Could not reach Finnhub. Check your network and try again.",
       "no_symbols": "Enter at least one ticker.",
-      "unknown_symbols": "Alpaca does not recognise: {symbols}"
+      "unknown_symbols": "Finnhub does not recognise: {symbols}",
+      "rate_limited": "Finnhub's rate limit was hit while checking. Wait a minute and try again."
     },
     "abort": {
       "already_configured": "PoLR Stocks is already set up."
@@ -29,18 +31,21 @@
       "init": {
         "title": "Watchlist",
         "data": {
-          "symbols": "Tickers"
+          "symbols": "Tickers",
+          "scan_interval": "Update interval (seconds)"
         },
         "data_description": {
-          "symbols": "Comma-separated, e.g. GOOGL, MSFT, NVDA"
+          "symbols": "Comma-separated, e.g. GOOGL, MSFT, NVDA",
+          "scan_interval": "One API call per ticker per update. Finnhub's free tier allows 60 calls/minute."
         }
       }
     },
     "error": {
-      "invalid_auth": "Alpaca rejected the stored credentials. Remove and re-add the integration.",
-      "cannot_connect": "Could not reach Alpaca. Check your network and try again.",
+      "invalid_auth": "Finnhub rejected the stored API key. Remove and re-add the integration.",
+      "cannot_connect": "Could not reach Finnhub. Check your network and try again.",
       "no_symbols": "Enter at least one ticker.",
-      "unknown_symbols": "Alpaca does not recognise: {symbols}"
+      "unknown_symbols": "Finnhub does not recognise: {symbols}",
+      "rate_limited": "Finnhub's rate limit was hit while checking. Wait a minute and try again."
     }
   }
 }

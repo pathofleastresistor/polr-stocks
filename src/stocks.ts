@@ -8,13 +8,10 @@
  *                                 state = last price
  *
  * with the day's numbers on attributes: `symbol`, `change`, `change_percent`,
- * `previous_close`, `open`, `high`, `low`, `volume`, `price_source` and
- * `last_trade_at`.
+ * `previous_close`, `open`, `high`, `low` and `quoted_at`.
  *
- * Change is read from the attributes rather than recomputed here — the
- * integration already picks the right previous close, which is subtler than it
- * looks outside market hours (see quote.py). Recomputing would risk two
- * different answers for the same number.
+ * Change is read from the attributes rather than recomputed here, so the card
+ * and the sensor can never disagree about the same number.
  */
 import type { HassEntity, HomeAssistant } from "./kit/types";
 
@@ -31,11 +28,8 @@ export interface Ticker {
   open: number | null;
   high: number | null;
   low: number | null;
-  volume: number | null;
-  /** Which snapshot field the price came from: latest_trade | minute_bar | daily_bar. */
-  priceSource: string;
-  /** ISO timestamp of the last trade, when known. */
-  lastTradeAt?: string;
+  /** ISO timestamp the quote was taken, when known. */
+  quotedAt?: string;
   available: boolean;
 }
 
@@ -93,9 +87,7 @@ export const readTicker = (hass: HomeAssistant, entity: string): Ticker | undefi
     open: num(attrs.open),
     high: num(attrs.high),
     low: num(attrs.low),
-    volume: num(attrs.volume),
-    priceSource: (attrs.price_source as string) ?? "",
-    lastTradeAt: attrs.last_trade_at as string | undefined,
+    quotedAt: attrs.quoted_at as string | undefined,
     available: available && price !== null,
   };
 };
@@ -163,15 +155,21 @@ export const formatPercent = (value: number | null, language = "en"): string => 
   return `${sign}${body}%`;
 };
 
-/** Compact volume, e.g. 56.5M. */
-export const formatVolume = (value: number | null, language = "en"): string => {
-  if (value === null) return "—";
-  return new Intl.NumberFormat(language, {
-    notation: "compact",
-    maximumFractionDigits: 1,
-  }).format(value);
+/**
+ * The session's low-to-high range, e.g. "$169.50 – $173.71".
+ *
+ * Finnhub reports no volume, so the range takes its place as the at-a-glance
+ * sense of how the day has moved. Empty when either end is unknown.
+ */
+export const formatRange = (
+  ticker: Ticker | undefined,
+  language = "en",
+): string => {
+  if (!ticker || ticker.low === null || ticker.high === null) return "";
+  const currency = ticker.currency;
+  return `${formatPrice(ticker.low, currency, language)} – ${formatPrice(
+    ticker.high,
+    currency,
+    language,
+  )}`;
 };
-
-/** True when the price came from a stale bar rather than a live trade. */
-export const isDerivedPrice = (ticker: Ticker | undefined): boolean =>
-  Boolean(ticker?.available && ticker.priceSource && ticker.priceSource !== "latest_trade");

@@ -7,8 +7,7 @@ import {
   formatChange,
   formatPercent,
   formatPrice,
-  formatVolume,
-  isDerivedPrice,
+  formatRange,
   isPriceSensor,
   num,
   readTicker,
@@ -47,7 +46,8 @@ test("readTicker pulls price and the day's numbers off attributes", () => {
   assert.equal(ticker.change, 2.61);
   assert.equal(ticker.changePercent, 1.5353);
   assert.equal(ticker.previousClose, 170.0);
-  assert.equal(ticker.volume, 56457696);
+  assert.equal(ticker.high, 173.71);
+  assert.equal(ticker.low, 169.5);
   assert.equal(ticker.currency, "USD");
   assert.equal(ticker.available, true);
 });
@@ -91,12 +91,16 @@ test("changeDirection is unknown when the change is missing entirely", () => {
   assert.equal(changeDirection(readTicker(hass, GOOGL)), "unknown");
 });
 
-test("isDerivedPrice flags prices carried over from a stale bar", () => {
+test("formatRange renders the session low-to-high", () => {
   const hass = makeHass();
-  assert.equal(isDerivedPrice(readTicker(hass, GOOGL)), false);
-  assert.equal(isDerivedPrice(readTicker(hass, NVDA)), true);
-  // Unavailable is its own state; don't also call it delayed.
-  assert.equal(isDerivedPrice(readTicker(hass, AMZN)), false);
+  assert.equal(formatRange(readTicker(hass, GOOGL), "en"), "$169.50 – $173.71");
+});
+
+test("formatRange is empty when either end is unknown", () => {
+  const hass = makeHass();
+  // TSLA carries no high/low, so there is no range to show.
+  assert.equal(formatRange(readTicker(hass, TSLA), "en"), "");
+  assert.equal(formatRange(undefined, "en"), "");
 });
 
 test("formatPrice renders currency and handles missing values", () => {
@@ -120,7 +124,3 @@ test("formatPercent always carries a sign", () => {
   assert.equal(formatPercent(null), "—");
 });
 
-test("formatVolume is compact", () => {
-  assert.equal(formatVolume(56457696, "en"), "56.5M");
-  assert.equal(formatVolume(null), "—");
-});
