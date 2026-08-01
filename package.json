@@ -1,0 +1,21 @@
+{
+  "name": "polr-stocks",
+  "version": "0.1.0",
+  "description": "Polr Stocks for Home Assistant.",
+  "license": "MIT",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "build": "tsc --noEmit && vite build",
+    "watch": "vite build --watch",
+    "dev": "npm run watch",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "lit": "^3.2.1"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2",
+    "vite": "^6.0.5"
+  }
+}
