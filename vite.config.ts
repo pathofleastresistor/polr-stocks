@@ -4,6 +4,9 @@ import { defineConfig } from "vite";
 // into one self-contained file.
 export default defineConfig({
   build: {
+    // Built into the component rather than dist/: HACS gives one repo exactly
+    // one category, so this ships as an integration that serves its own card.
+    outDir: "custom_components/polr_stocks/frontend",
     lib: {
       entry: "src/polr-stocks.ts",
       formats: ["es"],

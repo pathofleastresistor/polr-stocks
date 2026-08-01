@@ -24,3 +24,11 @@ CLOCK_CACHE_SECONDS = 300
 VALIDATION_SYMBOL = "AAPL"
 
 REQUEST_TIMEOUT_SECONDS = 15
+
+# The bundled card. HACS gives one repository exactly one category, so this
+# ships as an integration that serves and registers its own Lovelace resource
+# rather than as a separate plugin.
+URL_BASE = f"/{DOMAIN}"
+CARD_FILENAME = "polr-stocks.js"
+# Bump alongside manifest.json to force browsers past a cached bundle.
+CARD_VERSION = "0.1.0"

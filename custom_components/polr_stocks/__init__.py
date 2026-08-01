@@ -6,6 +6,7 @@ import logging
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
+from . import frontend
 from .api import AlpacaApi
 from .const import CONF_API_KEY, CONF_API_SECRET, CONF_SYMBOLS, DOMAIN
 from .coordinator import StocksCoordinator
@@ -20,6 +21,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     symbols: list[str] = list(entry.options.get(CONF_SYMBOLS, []))
     if not symbols:
         _LOGGER.warning("No symbols configured for %s", entry.title)
+
+    # This integration ships its own card; see frontend.py for why.
+    await frontend.async_register(hass)
 
     api = AlpacaApi(hass, entry.data[CONF_API_KEY], entry.data[CONF_API_SECRET])
     coordinator = StocksCoordinator(hass, entry, api, symbols)
@@ -44,3 +48,12 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 async def async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Reload after the watchlist is edited."""
     await hass.config_entries.async_reload(entry.entry_id)
+
+
+async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Drop the card resource when the integration is removed for good.
+
+    Deliberately not done on unload — a reload unloads too, and removing the
+    resource there would leave dashboards broken until the reload finished.
+    """
+    await frontend.async_unregister(hass)

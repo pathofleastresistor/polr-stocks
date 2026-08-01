@@ -95,20 +95,36 @@ npm test             # card logic (node --test)
 
 # Component tests. PYTEST_DISABLE_PLUGIN_AUTOLOAD stops pytest pulling in a
 # full Home Assistant; quote.py has no HA imports precisely so it can be
-# tested on its own.
+# tested on its own. The frontend tests skip here — they need HA.
 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python3.12 -m pytest -q
+
+# Everything, including the frontend tests, against real HA:
+docker exec ha-dev bash -c \
+  "cd /config/www/_projects/polr-stocks && python -m pytest -q --asyncio-mode=auto"
 ```
 
-## Packaging note
+`npm run build` writes into `custom_components/polr_stocks/frontend/`, so the
+component symlink alone is enough — `ha-dev link` registers no separate card
+resource, since the integration registers its own.
+
+## Packaging
 
 HACS keys repositories by full name, not by (name, category) — see
 `_repositories_by_full_name` in `hacs/base.py` — so **one GitHub repo gets
 exactly one HACS category**. A single repo cannot be installed as both an
-integration and a dashboard plugin.
+integration and a dashboard plugin; registering the same repo under a second
+category raises `HacsRepositoryExistException`.
 
-To ship both halves from one repo it must register as an **integration**, with
-the integration serving and registering its own card, the way `ha-bambulab`
-does (`custom_components/bambu_lab/frontend/*.js`, served at
-`/bambu_lab/…`). The alternative is two repos, as with `activity-manager` and
-`activity-manager-card`. This repo is not yet wired for either — see the note
-in the workspace before publishing.
+So this ships as a HACS **integration** that serves its own card, the way
+`ha-bambulab` does:
+
+- The card builds to `custom_components/polr_stocks/frontend/polr-stocks.js`
+  (not `dist/`), so HACS ships it with the integration.
+- `frontend.py` serves that directory at `/polr_stocks/` and adds the Lovelace
+  resource itself, updating the `?v=` when `CARD_VERSION` moves and removing it
+  when the integration is deleted.
+- In YAML resource mode it logs the URL to add by hand instead.
+
+Users install one thing, and the card can never drift out of sync with the
+component. Bump `CARD_VERSION` in `const.py` alongside `manifest.json` so
+browsers get past a cached bundle.

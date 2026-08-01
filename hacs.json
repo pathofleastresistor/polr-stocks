@@ -1,6 +1,5 @@
 {
-  "name": "Polr Stocks",
+  "name": "PoLR Stocks",
   "render_readme": true,
-  "filename": "polr-stocks.js",
-  "homeassistant": "2024.8.0"
+  "homeassistant": "2025.2.0"
 }
