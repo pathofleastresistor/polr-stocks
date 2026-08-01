@@ -108,6 +108,13 @@ Built in the [`ha-dev`](../../README.md) workspace.
 `config/packages/dev_stocks.yaml` provides fake tickers shaped exactly like the
 real sensors, so the card can be developed without API keys or market hours.
 
+Those fixtures are named `sensor.dev_stocks_*`, **not** `sensor.polr_stocks_*`.
+Mirroring the real entity ids is tempting — a dashboard built on fixtures would
+carry over to live data — but the moment the integration is set up in the same
+instance the ids collide, the fixture wins, and the real quotes get silently
+pushed to `_2` ids. The card then shows fake prices next to real ones with no
+indication which is which.
+
 ```bash
 npm install
 npm run watch        # rebuild the card on save
