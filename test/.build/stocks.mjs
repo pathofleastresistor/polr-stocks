@@ -5,11 +5,14 @@ var num = (value) => {
   const parsed = typeof value === "number" ? value : Number(value);
   return Number.isFinite(parsed) ? parsed : null;
 };
-var isPriceSensor = (stateObj) => Boolean(
-  stateObj?.entity_id.startsWith("sensor.") && stateObj.attributes.device_class === "monetary"
-);
-var discoverTickers = (hass) => Object.keys(hass.states).filter((id) => isPriceSensor(hass.states[id])).sort((a, b) => {
-  const ours = (id) => id.startsWith("sensor.polr_stocks_") ? 0 : 1;
+var isPriceSensor = (stateObj, hass) => {
+  if (!stateObj?.entity_id.startsWith("sensor.")) return false;
+  if (hass?.entities?.[stateObj.entity_id]?.platform === "polr_stocks") return true;
+  const symbol = stateObj.attributes.symbol;
+  return stateObj.attributes.device_class === "monetary" && typeof symbol === "string" && symbol.trim() !== "";
+};
+var discoverTickers = (hass) => Object.keys(hass.states).filter((id) => isPriceSensor(hass.states[id], hass)).sort((a, b) => {
+  const ours = (id) => hass.entities?.[id]?.platform === "polr_stocks" ? 0 : 1;
   return ours(a) - ours(b) || a.localeCompare(b);
 });
 var symbolFrom = (entity, stateObj) => {

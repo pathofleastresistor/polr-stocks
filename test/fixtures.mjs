@@ -16,6 +16,16 @@ const quote = (entityId, state, attributes = {}) => ({
 
 export const makeHass = () => ({
   locale: { language: "en" },
+  // The frontend's entity registry view, which carries the owning platform.
+  entities: {
+    "sensor.polr_stocks_googl": { platform: "polr_stocks" },
+    "sensor.polr_stocks_msft": { platform: "polr_stocks" },
+    "sensor.polr_stocks_nvda": { platform: "polr_stocks" },
+    "sensor.polr_stocks_amzn": { platform: "polr_stocks" },
+    // A template-backed fixture: not our platform, but it carries a symbol.
+    "sensor.polr_stocks_tsla": { platform: "template" },
+    "sensor.wells_fargo_checking_balance": { platform: "simplefin" },
+  },
   states: {
     // Up on the day, priced from a live trade.
     "sensor.polr_stocks_googl": quote("sensor.polr_stocks_googl", "172.61", {
@@ -58,14 +68,16 @@ export const makeHass = () => ({
       symbol: "AMZN",
     }),
 
-    // No `symbol` attribute — the entity id has to carry it.
+    // Template-backed, so discovery has to find it by its `symbol` attribute.
     "sensor.polr_stocks_tsla": quote("sensor.polr_stocks_tsla", "175.00", {
       friendly_name: "POLR Stocks TSLA",
+      symbol: "TSLA",
       change: 1.0,
       change_percent: 0.5747,
     }),
 
-    // A monetary sensor that is not a stock; discovery finds it, but last.
+    // A monetary sensor that is NOT a stock — a bank balance. Must never be
+    // offered as a ticker.
     "sensor.wells_fargo_checking_balance": quote(
       "sensor.wells_fargo_checking_balance",
       "4210.55",

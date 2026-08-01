@@ -42,19 +42,37 @@ export const num = (value: unknown): number | null => {
   return Number.isFinite(parsed) ? parsed : null;
 };
 
-/** A price sensor is a monetary sensor; the integration's are the common case. */
-export const isPriceSensor = (stateObj: HassEntity | undefined): boolean =>
-  Boolean(
-    stateObj?.entity_id.startsWith("sensor.") &&
-      stateObj.attributes.device_class === "monetary",
-  );
+/**
+ * A ticker sensor — deliberately narrower than "any monetary sensor".
+ *
+ * Bank balances, budgets and utility costs are all `device_class: monetary`
+ * too, so matching on that alone offers up a Chase card next to GOOGL. A stock
+ * sensor is identified either by coming from this integration, or by carrying
+ * a `symbol` attribute, which is what makes template-backed dev fixtures
+ * discoverable without also dragging in every account in the house.
+ */
+export const isPriceSensor = (
+  stateObj: HassEntity | undefined,
+  hass?: HomeAssistant,
+): boolean => {
+  if (!stateObj?.entity_id.startsWith("sensor.")) return false;
+  if (hass?.entities?.[stateObj.entity_id]?.platform === "polr_stocks") return true;
 
-/** Every price sensor in the system, polr_stocks' first, then alphabetical. */
+  const symbol = stateObj.attributes.symbol;
+  return (
+    stateObj.attributes.device_class === "monetary" &&
+    typeof symbol === "string" &&
+    symbol.trim() !== ""
+  );
+};
+
+/** Every ticker sensor in the system, this integration's first, then alphabetical. */
 export const discoverTickers = (hass: HomeAssistant): string[] =>
   Object.keys(hass.states)
-    .filter((id) => isPriceSensor(hass.states[id]))
+    .filter((id) => isPriceSensor(hass.states[id], hass))
     .sort((a, b) => {
-      const ours = (id: string) => (id.startsWith("sensor.polr_stocks_") ? 0 : 1);
+      const ours = (id: string) =>
+        hass.entities?.[id]?.platform === "polr_stocks" ? 0 : 1;
       return ours(a) - ours(b) || a.localeCompare(b);
     });
 

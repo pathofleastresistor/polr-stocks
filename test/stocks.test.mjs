@@ -26,16 +26,32 @@ test("num coerces attributes and rejects junk", () => {
   assert.equal(num("0"), 0);
 });
 
-test("isPriceSensor accepts monetary sensors only", () => {
+test("isPriceSensor accepts this integration's sensors", () => {
   const hass = makeHass();
-  assert.equal(isPriceSensor(hass.states[GOOGL]), true);
-  assert.equal(isPriceSensor(hass.states["sensor.living_room_temperature"]), false);
-  assert.equal(isPriceSensor(undefined), false);
+  assert.equal(isPriceSensor(hass.states[GOOGL], hass), true);
+  assert.equal(isPriceSensor(undefined, hass), false);
+  assert.equal(isPriceSensor(hass.states["sensor.living_room_temperature"], hass), false);
 });
 
-test("discoverTickers lists polr_stocks sensors first, then other monetary ones", () => {
+test("isPriceSensor rejects bank balances despite device_class monetary", () => {
+  const hass = makeHass();
+  // The bug this guards: every account in the house showing up as a ticker.
+  assert.equal(isPriceSensor(hass.states[CHECKING], hass), false);
+});
+
+test("isPriceSensor accepts a template fixture via its symbol attribute", () => {
+  const hass = makeHass();
+  assert.equal(isPriceSensor(hass.states[TSLA], hass), true);
+});
+
+test("discoverTickers lists this integration's sensors first, then the rest", () => {
   const found = discoverTickers(makeHass());
-  assert.deepEqual(found, [AMZN, GOOGL, MSFT, NVDA, TSLA, CHECKING]);
+  assert.deepEqual(found, [AMZN, GOOGL, MSFT, NVDA, TSLA]);
+});
+
+test("discoverTickers excludes non-stock monetary sensors", () => {
+  const found = discoverTickers(makeHass());
+  assert.ok(!found.includes(CHECKING));
   assert.ok(!found.includes("sensor.living_room_temperature"));
 });
 
@@ -53,7 +69,9 @@ test("readTicker pulls price and the day's numbers off attributes", () => {
 });
 
 test("readTicker derives the symbol from the entity id when unset", () => {
-  assert.equal(readTicker(makeHass(), TSLA).symbol, "TSLA");
+  const hass = makeHass();
+  delete hass.states[TSLA].attributes.symbol;
+  assert.equal(readTicker(hass, TSLA).symbol, "TSLA");
 });
 
 test("readTicker marks unavailable entities and yields no price", () => {

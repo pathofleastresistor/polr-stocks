@@ -1258,8 +1258,13 @@ const $t = (e, t, i) => {
   if (e == null || e === "") return null;
   const t = typeof e == "number" ? e : Number(e);
   return Number.isFinite(t) ? t : null;
-}, le = (e) => !!(e?.entity_id.startsWith("sensor.") && e.attributes.device_class === "monetary"), Ct = (e) => Object.keys(e.states).filter((t) => le(e.states[t])).sort((t, i) => {
-  const o = (r) => r.startsWith("sensor.polr_stocks_") ? 0 : 1;
+}, le = (e, t) => {
+  if (!e?.entity_id.startsWith("sensor.")) return !1;
+  if (t?.entities?.[e.entity_id]?.platform === "polr_stocks") return !0;
+  const i = e.attributes.symbol;
+  return e.attributes.device_class === "monetary" && typeof i == "string" && i.trim() !== "";
+}, Ct = (e) => Object.keys(e.states).filter((t) => le(e.states[t], e)).sort((t, i) => {
+  const o = (r) => e.entities?.[r]?.platform === "polr_stocks" ? 0 : 1;
   return o(t) - o(i) || t.localeCompare(i);
 }), he = (e, t) => {
   const i = t.attributes.symbol;
@@ -1568,7 +1573,7 @@ var ye = Object.defineProperty, _e = Object.getOwnPropertyDescriptor, rt = (e, t
     (n = e[s]) && (r = (o ? n(t, i, r) : n(r)) || r);
   return o && r && ye(t, i, r), r;
 };
-const xe = "0.1.0";
+const xe = "0.1.1";
 console.info(
   `%c POLR-STOCKS %c v${xe} `,
   "color:#fff;background:#3f51b5;font-weight:700",
