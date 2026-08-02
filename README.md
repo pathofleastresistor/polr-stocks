@@ -29,11 +29,12 @@ logs the limit it actually observes. See [Rate limits](#rate-limits).
 2. Copy `custom_components/polr_stocks/` into your HA `custom_components/` and
    restart.
 3. **Settings → Devices & Services → Add Integration → PoLR Stocks**, then enter
-   the key, a comma-separated ticker list, and an update interval.
+   the key and add tickers — type a symbol, press enter, and it becomes a chip.
+   Pasting a comma-separated list works too and splits into separate chips.
 4. Add the **PoLR Stocks** card to a dashboard and pick the tickers to show.
 
 Edit the watchlist and interval later via the integration's **Configure**
-button.
+button; click a chip's × to drop a ticker without retyping the rest.
 
 ## Entities
 
