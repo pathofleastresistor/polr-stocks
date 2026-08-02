@@ -27,6 +27,14 @@ export interface PolrStocksConfig {
   color_change?: boolean;
   /** Drop the secondary line and tighten rows to a single line each. */
   compact?: boolean;
+  /**
+   * Draw a trend line per row from Home Assistant's recorder history.
+   * Costs no API calls, but only covers the period since the integration was
+   * set up — the free Finnhub tier has no historical candles.
+   */
+  sparkline?: boolean;
+  /** How far back the sparkline reaches, in hours. */
+  sparkline_hours?: number;
 }
 
 /** Config after setConfig has filled in defaults. */
@@ -37,4 +45,6 @@ export interface ResolvedConfig extends PolrStocksConfig {
   secondary: SecondaryMode;
   color_change: boolean;
   compact: boolean;
+  sparkline: boolean;
+  sparkline_hours: number;
 }

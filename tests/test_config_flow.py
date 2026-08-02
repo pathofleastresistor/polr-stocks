@@ -10,7 +10,9 @@ test_frontend.py for the container command.
 """
 import pytest
 
-pytest.importorskip("homeassistant.helpers.selector")
+# config_entries, not helpers.selector: importing the component package pulls
+# in config_entries, so that is what has to be importable for these to run.
+pytest.importorskip("homeassistant.config_entries")
 
 from custom_components.polr_stocks.config_flow import parse_symbols  # noqa: E402
 

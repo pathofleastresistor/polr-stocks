@@ -5,6 +5,14 @@ import "./polr-stocks-editor";
 import { tileStyles } from "./kit/styles";
 import { showMoreInfo, type HomeAssistant } from "./kit/types";
 import {
+  downsample,
+  fetchHistory,
+  readSeries,
+  seriesDirection,
+  sparklinePath,
+  type HistoryResponse,
+} from "./history";
+import {
   DIRECTION_ICONS,
   changeDirection,
   discoverTickers,
@@ -18,7 +26,7 @@ import {
 } from "./stocks";
 import type { PolrStocksConfig, ResolvedConfig, TickerConfig } from "./types";
 
-const CARD_VERSION = "0.3.0";
+const CARD_VERSION = "0.4.0";
 
 /* eslint-disable no-console */
 console.info(
@@ -44,6 +52,11 @@ export class PolrStocks extends LitElement {
   @property({ attribute: false }) public hass?: HomeAssistant;
 
   @state() private _config?: ResolvedConfig;
+  @state() private _history?: HistoryResponse;
+
+  /** Refresh timer for recorder history; sparklines only. */
+  private _historyTimer?: number;
+  private _historyPending = false;
 
   public static async getConfigElement(): Promise<HTMLElement> {
     return document.createElement("polr-stocks-editor");
@@ -78,9 +91,63 @@ export class PolrStocks extends LitElement {
       secondary: "both",
       color_change: true,
       compact: false,
+      sparkline: false,
+      sparkline_hours: 24,
       ...config,
       tickers,
     };
+    // Config may have changed which entities or window we need.
+    this._history = undefined;
+    this._scheduleHistory();
+  }
+
+  public override connectedCallback(): void {
+    super.connectedCallback();
+    this._scheduleHistory();
+  }
+
+  public override disconnectedCallback(): void {
+    super.disconnectedCallback();
+    // Don't keep polling the recorder for a card nobody is looking at.
+    this._clearHistoryTimer();
+  }
+
+  private _clearHistoryTimer(): void {
+    if (this._historyTimer !== undefined) {
+      clearInterval(this._historyTimer);
+      this._historyTimer = undefined;
+    }
+  }
+
+  private _scheduleHistory(): void {
+    this._clearHistoryTimer();
+    if (!this._config?.sparkline || !this.isConnected) return;
+
+    void this._loadHistory();
+    // Recorder history is only worth re-reading occasionally; the live price
+    // comes from the state object and updates on its own.
+    this._historyTimer = window.setInterval(() => void this._loadHistory(), 300_000);
+  }
+
+  private async _loadHistory(): Promise<void> {
+    const config = this._config;
+    if (!this.hass || !config?.sparkline || this._historyPending) return;
+
+    const entities = config.tickers.map((t) => t.entity);
+    if (!entities.length) return;
+
+    this._historyPending = true;
+    try {
+      this._history = await fetchHistory(this.hass, entities, config.sparkline_hours);
+    } catch (err) {
+      // A missing recorder or a purged window shouldn't break the card; the
+      // rows simply render without a trend line.
+      // eslint-disable-next-line no-console
+      console.warn("polr-stocks: could not load history", err);
+      this._history = undefined;
+    } finally {
+      this._historyPending = false;
+    }
   }
 
   public getCardSize(): number {
@@ -176,6 +243,7 @@ export class PolrStocks extends LitElement {
             ? html`<div class="secondary"><span>${join(secondary)}</span></div>`
             : nothing}
         </div>
+        ${this._renderSparkline(config.entity)}
         <div class="quote">
           <div class="price ${ticker.available ? "" : "unavailable"}">
             ${ticker.available
@@ -187,6 +255,35 @@ export class PolrStocks extends LitElement {
             : nothing}
         </div>
       </li>
+    `;
+  }
+
+  /** Trend line for one row, or nothing when there is too little history. */
+  private _renderSparkline(entity: string) {
+    if (!this._config!.sparkline) return nothing;
+
+    const values = downsample(readSeries(this._history, entity));
+    const width = 64;
+    const height = 26;
+    const path = sparklinePath(values, width, height);
+    if (!path) return nothing;
+
+    // Colour by the sparkline's own start-to-end move, which is over the
+    // configured window and so need not match the day's direction.
+    const trend = this._config!.color_change ? seriesDirection(values) : "";
+
+    return html`
+      <svg
+        class="spark ${trend}"
+        viewBox="0 0 ${width} ${height}"
+        width=${width}
+        height=${height}
+        preserveAspectRatio="none"
+        aria-hidden="true"
+      >
+        <path d=${path} fill="none" stroke="currentColor" stroke-width="2"
+              stroke-linecap="round" stroke-linejoin="round" />
+      </svg>
     `;
   }
 
@@ -275,6 +372,18 @@ export class PolrStocks extends LitElement {
       }
       li.row.dir-down .tile-icon::before {
         background-color: var(--error-color, #db4437);
+      }
+      .spark {
+        flex: 0 0 auto;
+        margin-inline-end: var(--ha-space-1, 4px);
+        color: var(--secondary-text-color);
+        overflow: visible;
+      }
+      .spark.up {
+        color: var(--success-color, #43a047);
+      }
+      .spark.down {
+        color: var(--error-color, #db4437);
       }
       li.row {
         cursor: pointer;

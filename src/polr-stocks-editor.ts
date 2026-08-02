@@ -33,7 +33,12 @@ const SCHEMA = [
       { name: "show_change_percent", selector: { boolean: {} } },
       { name: "color_change", selector: { boolean: {} } },
       { name: "compact", selector: { boolean: {} } },
+      { name: "sparkline", selector: { boolean: {} } },
     ],
+  },
+  {
+    name: "sparkline_hours",
+    selector: { number: { min: 1, max: 720, step: 1, mode: "box", unit_of_measurement: "hours" } },
   },
 ] as const;
 
@@ -44,6 +49,8 @@ const LABELS: Record<string, string> = {
   show_change_percent: "Show change percent",
   color_change: "Colour gains and losses",
   compact: "Compact rows",
+  sparkline: "Show trend line",
+  sparkline_hours: "Trend line covers the last",
 };
 
 @customElement("polr-stocks-editor")

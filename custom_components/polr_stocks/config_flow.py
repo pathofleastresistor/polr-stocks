@@ -164,6 +164,41 @@ class PolrStocksConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             description_placeholders=placeholders,
         )
 
+    async def async_step_reauth(self, entry_data):
+        """Triggered by ConfigEntryAuthFailed when Finnhub rejects the key."""
+        return await self.async_step_reauth_confirm()
+
+    async def async_step_reauth_confirm(self, user_input=None):
+        """Take a replacement key, keeping the watchlist and entity ids."""
+        entry = self._get_reauth_entry()
+        errors: dict[str, str] = {}
+        placeholders: dict[str, str] = {}
+
+        if user_input is not None:
+            api_key = user_input[CONF_API_KEY].strip()
+            # Validate against the symbols already configured, so a bad key is
+            # distinguished from a bad ticker.
+            symbols = parse_symbols(entry.options.get(CONF_SYMBOLS))
+            errors, placeholders = await _validate(self.hass, api_key, symbols)
+
+            if not errors:
+                return self.async_update_reload_and_abort(
+                    entry, data_updates={CONF_API_KEY: api_key}
+                )
+
+        return self.async_show_form(
+            step_id="reauth_confirm",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(CONF_API_KEY): TextSelector(
+                        TextSelectorConfig(type=TextSelectorType.PASSWORD)
+                    )
+                }
+            ),
+            errors=errors,
+            description_placeholders=placeholders,
+        )
+
     @staticmethod
     @callback
     def async_get_options_flow(

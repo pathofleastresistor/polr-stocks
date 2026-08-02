@@ -1,15 +1,20 @@
-name: Release
+name: CI
 
 on:
   push:
+    branches: [main]
     tags: ["v*"]
+  pull_request:
   workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
-  release:
+  # One job for both: every push and PR runs the checks, and only a tag goes on
+  # to publish. Previously this ran on tags alone, so a broken commit sat on
+  # main undetected until release time — when the failure is most costly.
+  ci:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -25,11 +30,13 @@ jobs:
         run: npm test
 
       - name: Component unit tests
-        # quote.py has no Home Assistant imports precisely so it can be tested
-        # without installing HA. The api/frontend tests need it and self-skip.
+        # Home Assistant is installed so the api/frontend/diagnostics/coordinator
+        # tests actually run here rather than self-skipping — without it CI would
+        # cover only quote.py and silently pass on everything else. No
+        # pytest-asyncio: the async tests drive asyncio.run themselves.
         run: |
-          python3 -m pip install --quiet --break-system-packages pytest
-          PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python3 -m pytest -q
+          python3 -m pip install --quiet --break-system-packages pytest homeassistant
+          PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python3 -m pytest -q -rs
 
       - name: Versions agree, and the committed bundle is current
         # The built card is committed (HACS ships it with the integration), so

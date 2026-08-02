@@ -1,6 +1,6 @@
 {
   "name": "polr-stocks",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Polr Stocks for Home Assistant.",
   "license": "MIT",
   "type": "module",
@@ -10,7 +10,7 @@
     "watch": "vite build --watch",
     "dev": "npm run watch",
     "typecheck": "tsc --noEmit",
-    "pretest": "esbuild src/stocks.ts --bundle --format=esm --outfile=test/.build/stocks.mjs",
+    "pretest": "esbuild src/stocks.ts src/history.ts --bundle --format=esm --outdir=test/.build --out-extension:.js=.mjs",
     "test": "node --test \"test/*.test.mjs\""
   },
   "dependencies": {

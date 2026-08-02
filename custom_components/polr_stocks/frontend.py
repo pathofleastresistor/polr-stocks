@@ -75,13 +75,30 @@ async def _async_register_path(hass: HomeAssistant) -> None:
 
 
 async def _async_wait_for_resources(hass: HomeAssistant) -> None:
+    """Register once the resource collection is available.
+
+    The collection loads lazily, and `async_items()` does *not* trigger that —
+    it is a plain sync accessor. Waiting for `loaded` to flip therefore meant
+    waiting for something else (a browser opening a dashboard) to load it, so a
+    version bump could sit unregistered indefinitely on a server nobody had
+    visited yet. `async_get_info()` is public and ensures the load, which makes
+    this deterministic.
+
+    The retry remains only for the genuinely early case: the lovelace component
+    itself not being set up yet when this config entry starts.
+    """
+
     async def check(_now=None) -> None:
         resources = _resources(hass)
-        if resources is not None and resources.loaded:
-            await _async_register_card(hass, resources)
-        else:
-            _LOGGER.debug("Lovelace resources not loaded yet; retrying")
+        if resources is None:
+            _LOGGER.debug("Lovelace not ready yet; retrying")
             async_call_later(hass, _RETRY_SECONDS, check)
+            return
+
+        if not resources.loaded:
+            await resources.async_get_info()
+
+        await _async_register_card(hass, resources)
 
     await check()
 
@@ -109,8 +126,10 @@ async def async_unregister(hass: HomeAssistant) -> None:
     if _resource_mode(hass) != "storage":
         return
     resources = _resources(hass)
-    if resources is None or not resources.loaded:
+    if resources is None:
         return
+    if not resources.loaded:
+        await resources.async_get_info()
 
     for resource in list(resources.async_items()):
         if str(resource.get("url", "")).split("?")[0] == CARD_URL:

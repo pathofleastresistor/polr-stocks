@@ -73,6 +73,27 @@ tickers:
 | `secondary` | `both` | `both` \| `change` \| `range` \| `none` |
 | `color_change` | `true` | Colour gains and losses |
 | `compact` | `false` | One line per row, change beside the price |
+| `sparkline` | `false` | Trend line per row, from recorder history |
+| `sparkline_hours` | `24` | How far back the trend line reaches |
+
+## Sparklines
+
+Finnhub's free tier returns 403 on historical candles, so the trend line is
+drawn from Home Assistant's own recorder instead — the same websocket command
+mini-graph-card uses. It costs no API calls. The only real limitation is that
+history begins when the integration was set up, not at the IPO.
+
+The request uses `minimal_response` and `no_attributes`: these sensors carry
+eight attributes each, and a day of them per ticker is a lot of payload to ship
+to a browser for a line drawing. Series are downsampled to 96 points, since a
+day of 60-second polling is several points per pixel in a 64px sparkline.
+
+## Diagnostics
+
+**Settings → Devices & Services → PoLR Stocks → ⋮ → Download diagnostics** dumps
+the coordinator state and, most usefully, the rate-limit headers Finnhub last
+returned — the only direct evidence of what the free tier actually allows. The
+API key is redacted.
 
 ## Rate limits
 
@@ -94,7 +115,13 @@ Holidays are deliberately not modelled: on a holiday the integration polls a
 flat price a few extra times, which is harmless, whereas a wrong "closed" would
 freeze real prices.
 
-If you do hit a cap, raise the update interval in **Configure**.
+If the limit bites on several consecutive updates, a repair notice appears in
+**Settings → System → Repairs** suggesting a longer interval; it clears itself
+once updates complete normally again.
+
+If Finnhub rejects the key outright — revoked or rotated — the integration
+raises a reauthentication prompt so the key can be replaced in place, keeping
+your entity ids and their history. (Deleting and re-adding would lose both.)
 
 ## An edge case worth knowing about
 

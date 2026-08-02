@@ -13,6 +13,13 @@
           "symbols": "Type a ticker and press enter. Pasting a comma-separated list also works.",
           "scan_interval": "One API call per ticker per update. Finnhub's free tier allows 60 calls/minute."
         }
+      },
+      "reauth_confirm": {
+        "title": "Reauthenticate PoLR Stocks",
+        "description": "Finnhub rejected the stored API key. Enter a new one \u2014 your watchlist and entity history are kept.",
+        "data": {
+          "api_key": "API key"
+        }
       }
     },
     "error": {
@@ -23,7 +30,8 @@
       "rate_limited": "Finnhub's rate limit was hit while checking. Wait a minute and try again."
     },
     "abort": {
-      "already_configured": "PoLR Stocks is already set up."
+      "already_configured": "PoLR Stocks is already set up.",
+      "reauth_successful": "PoLR Stocks reauthenticated successfully."
     }
   },
   "options": {
@@ -46,6 +54,12 @@
       "no_symbols": "Enter at least one ticker.",
       "unknown_symbols": "Finnhub does not recognise: {symbols}",
       "rate_limited": "Finnhub's rate limit was hit while checking. Wait a minute and try again."
+    }
+  },
+  "issues": {
+    "rate_limited": {
+      "title": "PoLR Stocks is hitting Finnhub's rate limit",
+      "description": "Quotes were cut short by Finnhub's rate limit on several consecutive updates, so some tickers may be showing an older price.\n\nYou are polling {symbols} tickers every {interval} seconds, which is one API call per ticker per update. Raise the update interval in the integration's Configure dialog, or track fewer tickers.\n\nThis notice clears itself once updates complete normally again."
     }
   }
 }

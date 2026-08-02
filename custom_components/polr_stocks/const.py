@@ -27,10 +27,15 @@ RATE_LIMIT_RESERVE = 2
 
 REQUEST_TIMEOUT_SECONDS = 15
 
+# Raise a repair only after the limit bites repeatedly — a single 429 during a
+# burst is self-correcting and not worth interrupting anyone over.
+RATE_LIMIT_ISSUE_THRESHOLD = 3
+ISSUE_RATE_LIMITED = "rate_limited"
+
 # The bundled card. HACS gives one repository exactly one category, so this
 # ships as an integration that serves and registers its own Lovelace resource
 # rather than as a separate plugin.
 URL_BASE = f"/{DOMAIN}"
 CARD_FILENAME = "polr-stocks.js"
 # Bump alongside manifest.json to force browsers past a cached bundle.
-CARD_VERSION = "0.3.0"
+CARD_VERSION = "0.4.0"
