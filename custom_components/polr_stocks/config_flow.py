@@ -6,6 +6,17 @@ import logging
 import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.core import callback
+from homeassistant.helpers.selector import (
+    NumberSelector,
+    NumberSelectorConfig,
+    NumberSelectorMode,
+    SelectSelector,
+    SelectSelectorConfig,
+    SelectSelectorMode,
+    TextSelector,
+    TextSelectorConfig,
+    TextSelectorType,
+)
 
 from .api import FinnhubApi, FinnhubApiError, FinnhubAuthError, FinnhubRateLimitError
 from .const import (
@@ -20,28 +31,74 @@ from .const import (
 
 _LOGGER = logging.getLogger(__name__)
 
-_INTERVAL = vol.All(
-    vol.Coerce(int),
-    vol.Range(min=MIN_SCAN_INTERVAL_SECONDS, max=MAX_SCAN_INTERVAL_SECONDS),
-)
 
-STEP_USER_DATA_SCHEMA = vol.Schema(
-    {
-        vol.Required(CONF_API_KEY): str,
-        vol.Required(CONF_SYMBOLS, default="GOOGL, MSFT, NVDA"): str,
-        vol.Required(CONF_SCAN_INTERVAL, default=DEFAULT_SCAN_INTERVAL_SECONDS): _INTERVAL,
-    }
-)
+def parse_symbols(raw: str | list[str] | None) -> list[str]:
+    """Normalise entered tickers, de-duplicated and order-preserving.
 
+    Accepts the chip selector's list as well as a plain string, because a
+    string still arrives from two directions: config entries written by
+    earlier versions, and a user pasting "GOOGL, MSFT" into a single chip
+    rather than typing them one at a time.
+    """
+    if raw is None:
+        return []
+    chunks = raw if isinstance(raw, list) else [raw]
 
-def parse_symbols(raw: str) -> list[str]:
-    """Split a user-entered ticker list, de-duplicated and order-preserving."""
     seen: list[str] = []
-    for chunk in raw.replace("\n", ",").split(","):
-        symbol = chunk.strip().upper()
-        if symbol and symbol not in seen:
-            seen.append(symbol)
+    for chunk in chunks:
+        for part in str(chunk).replace("\n", ",").split(","):
+            symbol = part.strip().upper()
+            if symbol and symbol not in seen:
+                seen.append(symbol)
     return seen
+
+
+def _symbols_selector(current: list[str]) -> SelectSelector:
+    """A chip field: type a ticker, press enter, click x to drop one.
+
+    `options` seeds the already-chosen tickers so they render as labelled
+    chips; `custom_value` is what allows anything else to be typed, since
+    there is no fixed universe of symbols to offer. Unsorted on purpose — the
+    list order is the card's default row order.
+    """
+    return SelectSelector(
+        SelectSelectorConfig(
+            options=current,
+            multiple=True,
+            custom_value=True,
+            sort=False,
+            mode=SelectSelectorMode.DROPDOWN,
+        )
+    )
+
+
+def _interval_selector() -> NumberSelector:
+    return NumberSelector(
+        NumberSelectorConfig(
+            min=MIN_SCAN_INTERVAL_SECONDS,
+            max=MAX_SCAN_INTERVAL_SECONDS,
+            # step=1, not a friendlier 15: in a box the step also drives HTML5
+            # validation, so a coarse step rejects typed values that aren't a
+            # multiple of it (100 would be refused with step=15).
+            step=1,
+            mode=NumberSelectorMode.BOX,
+            unit_of_measurement="seconds",
+        )
+    )
+
+
+def _schema(
+    *, symbols: list[str], interval: int, include_key: bool
+) -> vol.Schema:
+    """Build the form. The key only appears during initial setup."""
+    fields: dict = {}
+    if include_key:
+        fields[vol.Required(CONF_API_KEY)] = TextSelector(
+            TextSelectorConfig(type=TextSelectorType.PASSWORD)
+        )
+    fields[vol.Required(CONF_SYMBOLS, default=symbols)] = _symbols_selector(symbols)
+    fields[vol.Required(CONF_SCAN_INTERVAL, default=interval)] = _interval_selector()
+    return vol.Schema(fields)
 
 
 async def _validate(
@@ -78,10 +135,14 @@ class PolrStocksConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_user(self, user_input=None):
         errors: dict[str, str] = {}
         placeholders: dict[str, str] = {}
+        symbols: list[str] = []
+        interval = DEFAULT_SCAN_INTERVAL_SECONDS
 
         if user_input is not None:
             api_key = user_input[CONF_API_KEY].strip()
             symbols = parse_symbols(user_input[CONF_SYMBOLS])
+            # NumberSelector hands back a float.
+            interval = int(user_input[CONF_SCAN_INTERVAL])
 
             errors, placeholders = await _validate(self.hass, api_key, symbols)
 
@@ -91,15 +152,14 @@ class PolrStocksConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 return self.async_create_entry(
                     title="Stocks",
                     data={CONF_API_KEY: api_key},
-                    options={
-                        CONF_SYMBOLS: symbols,
-                        CONF_SCAN_INTERVAL: user_input[CONF_SCAN_INTERVAL],
-                    },
+                    options={CONF_SYMBOLS: symbols, CONF_SCAN_INTERVAL: interval},
                 )
 
         return self.async_show_form(
             step_id="user",
-            data_schema=STEP_USER_DATA_SCHEMA,
+            # Re-shown with what was typed, so a rejected ticker can be fixed
+            # rather than re-entered from scratch.
+            data_schema=_schema(symbols=symbols, interval=interval, include_key=True),
             errors=errors,
             description_placeholders=placeholders,
         )
@@ -117,35 +177,29 @@ class PolrStocksOptionsFlow(config_entries.OptionsFlow):
 
     async def async_step_init(self, user_input=None):
         entry = self.config_entry
-        current: list[str] = entry.options.get(CONF_SYMBOLS, [])
-        interval: int = entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL_SECONDS)
+        # parse_symbols, not a bare get: an entry written before the chip field
+        # existed still holds a comma-separated string here.
+        current = parse_symbols(entry.options.get(CONF_SYMBOLS))
+        interval = int(entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL_SECONDS))
 
         errors: dict[str, str] = {}
         placeholders: dict[str, str] = {}
 
         if user_input is not None:
             symbols = parse_symbols(user_input[CONF_SYMBOLS])
+            interval = int(user_input[CONF_SCAN_INTERVAL])
             errors, placeholders = await _validate(
                 self.hass, entry.data[CONF_API_KEY], symbols
             )
             if not errors:
                 return self.async_create_entry(
-                    data={
-                        CONF_SYMBOLS: symbols,
-                        CONF_SCAN_INTERVAL: user_input[CONF_SCAN_INTERVAL],
-                    }
+                    data={CONF_SYMBOLS: symbols, CONF_SCAN_INTERVAL: interval}
                 )
             current = symbols or current
-            interval = user_input[CONF_SCAN_INTERVAL]
 
         return self.async_show_form(
             step_id="init",
-            data_schema=vol.Schema(
-                {
-                    vol.Required(CONF_SYMBOLS, default=", ".join(current)): str,
-                    vol.Required(CONF_SCAN_INTERVAL, default=interval): _INTERVAL,
-                }
-            ),
+            data_schema=_schema(symbols=current, interval=interval, include_key=False),
             errors=errors,
             description_placeholders=placeholders,
         )

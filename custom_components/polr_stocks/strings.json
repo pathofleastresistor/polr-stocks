@@ -10,7 +10,7 @@
           "scan_interval": "Update interval (seconds)"
         },
         "data_description": {
-          "symbols": "Comma-separated, e.g. GOOGL, MSFT, NVDA",
+          "symbols": "Type a ticker and press enter. Pasting a comma-separated list also works.",
           "scan_interval": "One API call per ticker per update. Finnhub's free tier allows 60 calls/minute."
         }
       }
@@ -35,7 +35,7 @@
           "scan_interval": "Update interval (seconds)"
         },
         "data_description": {
-          "symbols": "Comma-separated, e.g. GOOGL, MSFT, NVDA",
+          "symbols": "Type a ticker and press enter. Pasting a comma-separated list also works.",
           "scan_interval": "One API call per ticker per update. Finnhub's free tier allows 60 calls/minute."
         }
       }

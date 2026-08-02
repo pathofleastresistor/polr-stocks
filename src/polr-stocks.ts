@@ -18,7 +18,7 @@ import {
 } from "./stocks";
 import type { PolrStocksConfig, ResolvedConfig, TickerConfig } from "./types";
 
-const CARD_VERSION = "0.2.0";
+const CARD_VERSION = "0.3.0";
 
 /* eslint-disable no-console */
 console.info(

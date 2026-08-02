@@ -1,6 +1,6 @@
 {
   "name": "polr-stocks",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Polr Stocks for Home Assistant.",
   "license": "MIT",
   "type": "module",

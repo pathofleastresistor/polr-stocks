@@ -1573,7 +1573,7 @@ var ye = Object.defineProperty, _e = Object.getOwnPropertyDescriptor, rt = (e, t
     (n = e[s]) && (r = (o ? n(t, i, r) : n(r)) || r);
   return o && r && ye(t, i, r), r;
 };
-const xe = "0.2.0";
+const xe = "0.3.0";
 console.info(
   `%c POLR-STOCKS %c v${xe} `,
   "color:#fff;background:#3f51b5;font-weight:700",
