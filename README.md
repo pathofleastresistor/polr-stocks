@@ -134,6 +134,31 @@ docker exec ha-dev bash -c \
 component symlink alone is enough — `ha-dev link` registers no separate card
 resource, since the integration registers its own.
 
+## Brand icon
+
+Home Assistant 2026.3+ serves brand images straight from a custom integration —
+no PR to `home-assistant/brands` needed. The contract is just a `brand/`
+directory at the top level of the component: `loader.py` sets `has_branding`
+from its presence, and `components/brands` reads PNGs out of it, serving them at
+`/api/brands/integration/polr_stocks/<image>.png`.
+
+Only `icon.png` (256×256) and `icon@2x.png` (512×512) are shipped. HA's fallback
+chain resolves `logo`, `dark_icon` and `dark_logo` back to them, so a
+single square mark covers all eight allowed images. The one wrinkle is that
+`logo@2x.png` falls back to `logo.png` → `icon.png` rather than to
+`icon@2x.png`, so hDPI *logo* slots get the 256px file; shipping duplicate
+`logo*` copies purely to game that chain wasn't worth the bytes.
+
+`icon.svg` is the source. Regenerate the PNGs with:
+
+```bash
+./scripts/render-icon.sh
+```
+
+The mark is a rising trend line over candlesticks on a saturated green circle.
+Saturated rather than dark deliberately — HA renders integration icons on both
+light and dark cards, and a "finance terminal" navy sinks into a dark theme.
+
 ## Packaging
 
 HACS keys repositories by full name, not by (name, category) — see
