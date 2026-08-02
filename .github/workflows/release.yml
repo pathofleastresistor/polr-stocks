@@ -9,18 +9,62 @@ permissions:
   contents: write
 
 jobs:
-  build:
+  release:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
+
       - run: npm ci
-      - run: npm run build
-      - uses: softprops/action-gh-release@v2
-        if: startsWith(github.ref, 'refs/tags/')
+
+      - name: Card unit tests
+        run: npm test
+
+      - name: Component unit tests
+        # quote.py has no Home Assistant imports precisely so it can be tested
+        # without installing HA. The api/frontend tests need it and self-skip.
+        run: |
+          python3 -m pip install --quiet --break-system-packages pytest
+          PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python3 -m pytest -q
+
+      - name: Versions agree, and the committed bundle is current
+        # The built card is committed (HACS ships it with the integration), so
+        # it can silently drift from src/. This catches the common miss: bumping
+        # the version without rebuilding.
+        run: |
+          set -euo pipefail
+          manifest=$(jq -r .version custom_components/polr_stocks/manifest.json)
+          pkg=$(jq -r .version package.json)
+          const=$(grep -oP 'CARD_VERSION = "\K[^"]+' custom_components/polr_stocks/const.py)
+          bundle=$(grep -oP 'CARD_VERSION\s*=\s*"\K[^"]+' src/polr-stocks.ts)
+
+          echo "manifest.json    $manifest"
+          echo "package.json     $pkg"
+          echo "const.py         $const"
+          echo "src/polr-stocks  $bundle"
+
+          for v in "$pkg" "$const" "$bundle"; do
+            [[ "$v" == "$manifest" ]] || { echo "::error::version mismatch against manifest.json ($manifest)"; exit 1; }
+          done
+
+          if [[ "${GITHUB_REF_TYPE:-}" == "tag" ]]; then
+            [[ "${GITHUB_REF_NAME#v}" == "$manifest" ]] \
+              || { echo "::error::tag ${GITHUB_REF_NAME} does not match manifest version $manifest"; exit 1; }
+          fi
+
+          npm run build
+          git diff --exit-code -- custom_components/polr_stocks/frontend/polr-stocks.js \
+            || { echo "::error::committed card bundle is stale — run 'npm run build' and commit"; exit 1; }
+
+      - name: Publish release
+        # No file assets: HACS installs an integration by copying
+        # custom_components/<domain>/ out of the tag, so a loose .js would be
+        # noise. The built card already lives inside that directory.
+        if: github.ref_type == 'tag'
+        uses: softprops/action-gh-release@v2
         with:
-          files: dist/polr-stocks.js
           generate_release_notes: true

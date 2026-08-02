@@ -33,4 +33,4 @@ REQUEST_TIMEOUT_SECONDS = 15
 URL_BASE = f"/{DOMAIN}"
 CARD_FILENAME = "polr-stocks.js"
 # Bump alongside manifest.json to force browsers past a cached bundle.
-CARD_VERSION = "0.1.1"
+CARD_VERSION = "0.2.0"
